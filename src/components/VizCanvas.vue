@@ -128,8 +128,6 @@ watch(() => state.cinematic, (v) => { uniforms.uCine.value = v ? 1.0 : 0.0 })
 watch(() => state.wall, (v) => { uniforms.uWall.value = v })
 watch(() => state.wallScale, (v) => { uniforms.uWallScale.value = v })
 
-const { onBeforeRender } = useLoop()
-
 let time = 0
 let prevBeat = 0
 let beatPulse = 0
@@ -138,7 +136,7 @@ let bloomT = 3.0
 
 const SMOOTH_RATE = 0.15
 
-onBeforeRender(({ delta }: { delta: number }) => {
+function renderLoop({ delta }: { delta: number }) {
   time += delta * state.speed
   const audio = audioEngine.analyse(state.reactivity)
 
@@ -237,6 +235,15 @@ onBeforeRender(({ delta }: { delta: number }) => {
   // Beat intensity decay for UI
   state.beatIntensity = Math.max(0, state.beatIntensity - 0.04)
   prevBeat = audio.beat
+}
+
+onMounted(() => {
+  materialRef.value = createMaterial(state.mode)
+  window.addEventListener('resize', onResize)
+
+  // useLoop must be called after TresCanvas provides its context
+  const loop = useLoop()
+  loop.onBeforeRender(renderLoop)
 })
 
 function onMouseMove(e: MouseEvent) {
@@ -256,11 +263,6 @@ function onTouchMove(e: TouchEvent) {
 function onResize() {
   uniforms.uResolution.value.set(window.innerWidth, window.innerHeight)
 }
-
-onMounted(() => {
-  materialRef.value = createMaterial(state.mode)
-  window.addEventListener('resize', onResize)
-})
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
