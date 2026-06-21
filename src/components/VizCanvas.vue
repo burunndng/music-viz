@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useLoop } from '@tresjs/core'
+import { ref, provide, onMounted, onBeforeUnmount, watch } from 'vue'
 import { state, animated } from '../lib/store'
 import { audioEngine } from '../lib/audio'
 import { modeShaders } from '../lib/shaders/modes'
+import RenderLoop from './RenderLoop.vue'
 import * as THREE from 'three'
 
 const materialRef = ref<THREE.ShaderMaterial>()
@@ -45,8 +45,8 @@ const uniforms = {
   uCentroid: { value: 0.5 },
   uAudioOn: { value: 0 },
   // 8-band audio (ported from enthea)
-  uBands0: { value: new THREE.Vector4(0, 0, 0, 0) },  // sub, bass, lowmid, mid
-  uBands1: { value: new THREE.Vector4(0, 0, 0, 0) },  // highmid, treble, air, level
+  uBands0: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uBands1: { value: new THREE.Vector4(0, 0, 0, 0) },
   uDissonance: { value: 0 },
   uBeatPulse: { value: 0 },
   uBeatPhase: { value: 0 },
@@ -136,7 +136,8 @@ let bloomT = 3.0
 
 const SMOOTH_RATE = 0.15
 
-function renderLoop({ delta }: { delta: number }) {
+/* ── Render loop — injected into RenderLoop.vue (child of TresCanvas) ── */
+provide('renderLoop', ({ delta }: { delta: number }) => {
   time += delta * state.speed
   const audio = audioEngine.analyse(state.reactivity)
 
@@ -194,10 +195,10 @@ function renderLoop({ delta }: { delta: number }) {
   const wave = audio.waveform
   for (let i = 0; i < 256; i++) {
     const v = Math.max(0, Math.min(255, Math.round(((wave[i] ?? 0) * 0.5 + 0.5) * 255)))
-    waveTexData[i * 4] = v       // R
-    waveTexData[i * 4 + 1] = v   // G
-    waveTexData[i * 4 + 2] = v   // B
-    waveTexData[i * 4 + 3] = 255 // A
+    waveTexData[i * 4] = v
+    waveTexData[i * 4 + 1] = v
+    waveTexData[i * 4 + 2] = v
+    waveTexData[i * 4 + 3] = 255
   }
   waveTexture.needsUpdate = true
 
@@ -235,15 +236,6 @@ function renderLoop({ delta }: { delta: number }) {
   // Beat intensity decay for UI
   state.beatIntensity = Math.max(0, state.beatIntensity - 0.04)
   prevBeat = audio.beat
-}
-
-onMounted(() => {
-  materialRef.value = createMaterial(state.mode)
-  window.addEventListener('resize', onResize)
-
-  // useLoop must be called after TresCanvas provides its context
-  const loop = useLoop()
-  loop.onBeforeRender(renderLoop)
 })
 
 function onMouseMove(e: MouseEvent) {
@@ -263,6 +255,11 @@ function onTouchMove(e: TouchEvent) {
 function onResize() {
   uniforms.uResolution.value.set(window.innerWidth, window.innerHeight)
 }
+
+onMounted(() => {
+  materialRef.value = createMaterial(state.mode)
+  window.addEventListener('resize', onResize)
+})
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
@@ -285,6 +282,7 @@ onBeforeUnmount(() => {
         <TresPlaneGeometry :args="[2, 2]" />
         <primitive v-if="materialRef" :object="materialRef" />
       </TresMesh>
+      <RenderLoop />
     </TresCanvas>
   </div>
 </template>
