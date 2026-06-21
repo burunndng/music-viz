@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { TresCanvas } from '@tresjs/core'
 import { state, animated } from '../lib/store'
 import { audioEngine } from '../lib/audio'
 import { modeShaders } from '../lib/shaders/modes'
