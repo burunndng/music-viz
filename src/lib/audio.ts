@@ -70,7 +70,13 @@ class AudioEngine {
 
     this.mic = new Tone.UserMedia()
     await this.mic.open()
-    this.mic.chain(this.fft, this.waveformAnalyser)
+
+    // Connect mic → fft → waveform using native nodes
+    const micOut = (this.mic as any).output as AudioNode
+    const fftIn = (this.fft as any)._gain as AudioNode
+    const waveIn = (this.waveformAnalyser as any)._gain as AudioNode
+    micOut.connect(fftIn)
+    fftIn.connect(waveIn)
 
     this.analysis.on = true
   }
@@ -94,12 +100,16 @@ class AudioEngine {
       this.analysis.on = false
     })
 
+    // Use native Web Audio API for reliable connections
     const ctx = Tone.context.rawContext as unknown as AudioContext
     const sourceNode = ctx.createMediaElementSource(this.audioElement)
+    const fftIn = (this.fft as any)._gain as AudioNode
+    const waveIn = (this.waveformAnalyser as any)._gain as AudioNode
 
+    // source → destination (so we hear it) + source → fft → waveform
     sourceNode.connect(ctx.destination)
-    Tone.connect(sourceNode as unknown as Tone.ToneAudioNode, this.fft)
-    Tone.connect(this.fft, this.waveformAnalyser)
+    sourceNode.connect(fftIn)
+    fftIn.connect(waveIn)
 
     this.micSource = sourceNode as unknown as MediaStreamAudioSourceNode
 
