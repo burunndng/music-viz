@@ -7,6 +7,23 @@ const normalizeDB = (db: number, min = -100, max = 0) =>
 const ema = (cur: number, raw: number, fast: number, slow: number, on: boolean) =>
   cur + (raw - cur) * (on ? fast : slow)
 
+/* ── Tone.js to Native Web Audio helpers ────────────────────── */
+const getNativeInput = (node: any): AudioNode | AudioParam | null => {
+  let current = node
+  while (current && (current instanceof Tone.ToneAudioNode || current instanceof Tone.Param)) {
+    current = current.input
+  }
+  return current
+}
+
+const getNativeOutput = (node: any): AudioNode | null => {
+  let current = node
+  while (current && current instanceof Tone.ToneAudioNode) {
+    current = current.output
+  }
+  return current
+}
+
 /* ── Analysis result ───────────────────────────────────────── */
 export interface AudioAnalysis {
   on: boolean
@@ -72,11 +89,14 @@ class AudioEngine {
     await this.mic.open()
 
     // Connect mic → fft → waveform using native nodes
-    const micOut = (this.mic as any).output as AudioNode
-    const fftIn = (this.fft as any)._gain as AudioNode
-    const waveIn = (this.waveformAnalyser as any)._gain as AudioNode
-    micOut.connect(fftIn)
-    fftIn.connect(waveIn)
+    const micOut = getNativeOutput(this.mic) as AudioNode
+    const fftIn = getNativeInput(this.fft) as AudioNode
+    const waveIn = getNativeInput(this.waveformAnalyser) as AudioNode
+
+    if (micOut && fftIn && waveIn) {
+      micOut.connect(fftIn)
+      fftIn.connect(waveIn)
+    }
 
     this.analysis.on = true
   }
@@ -103,13 +123,15 @@ class AudioEngine {
     // Use native Web Audio API for reliable connections
     const ctx = Tone.context.rawContext as unknown as AudioContext
     const sourceNode = ctx.createMediaElementSource(this.audioElement)
-    const fftIn = (this.fft as any)._gain as AudioNode
-    const waveIn = (this.waveformAnalyser as any)._gain as AudioNode
+    const fftIn = getNativeInput(this.fft) as AudioNode
+    const waveIn = getNativeInput(this.waveformAnalyser) as AudioNode
 
-    // source → destination (so we hear it) + source → fft → waveform
-    sourceNode.connect(ctx.destination)
-    sourceNode.connect(fftIn)
-    fftIn.connect(waveIn)
+    if (fftIn && waveIn) {
+      // source → destination (so we hear it) + source → fft → waveform
+      sourceNode.connect(ctx.destination)
+      sourceNode.connect(fftIn)
+      fftIn.connect(waveIn)
+    }
 
     this.micSource = sourceNode as unknown as MediaStreamAudioSourceNode
 
