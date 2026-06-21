@@ -3,7 +3,6 @@ import { ref } from 'vue'
 import { state, MODES, PALETTES, presets, SUBSTANCES, animateToPreset, applySubstance } from '../lib/store'
 import { audioEngine } from '../lib/audio'
 import SliderControl from './SliderControl.vue'
-import gsap from 'gsap'
 
 const fileInput = ref<HTMLInputElement>()
 const trackName = ref('')

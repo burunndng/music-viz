@@ -152,8 +152,10 @@ export const state = reactive<VizState>({
   beatIntensity: 0,
 })
 
-/* ── Animated state for smooth GSAP transitions ── */
-export const animated = reactive({
+/* ── Animated state for smooth GSAP transitions ──
+ * Plain object (NOT reactive) — read every frame in the rAF loop,
+ * written by GSAP. Vue reactivity would add proxy overhead per access. */
+export const animated = {
   dose: state.dose,
   speed: state.speed,
   complexity: state.complexity,
@@ -164,7 +166,7 @@ export const animated = reactive({
   voidness: state.voidness,
   tone: state.tone,
   ascension: state.ascension,
-})
+}
 
 const ANIM_DURATION = 0.8
 const ANIM_EASE = 'power2.inOut'

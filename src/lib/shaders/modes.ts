@@ -1,12 +1,11 @@
 import { commonGLSL } from './common'
 
 function fullscreenVert() {
-  return `in vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }`
+  return `void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`
 }
 
 function fragBody(body: string) {
   return commonGLSL + `
-uniform vec2 uResolution; out vec4 fragColor;
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
   float t = uTime * uSpeed;
@@ -14,7 +13,7 @@ void main() {
   vec3 col;
 ` + body + `
   col = applyPostFX(col);
-  fragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, 1.0);
 }`
 }
 
