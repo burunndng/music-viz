@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Stray template directories
+mmusic-viz/
+my-app/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
