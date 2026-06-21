@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, provide, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { state, animated } from '../lib/store'
 import { audioEngine } from '../lib/audio'
 import { modeShaders } from '../lib/shaders/modes'
@@ -136,8 +136,8 @@ let bloomT = 3.0
 
 const SMOOTH_RATE = 0.15
 
-/* ── Render loop — injected into RenderLoop.vue (child of TresCanvas) ── */
-provide('renderLoop', ({ delta }: { delta: number }) => {
+/* ── Render loop (passed to RenderLoop.vue as prop) ── */
+function renderLoop({ delta }: { delta: number }) {
   time += delta * state.speed
   const audio = audioEngine.analyse(state.reactivity)
 
@@ -236,7 +236,7 @@ provide('renderLoop', ({ delta }: { delta: number }) => {
   // Beat intensity decay for UI
   state.beatIntensity = Math.max(0, state.beatIntensity - 0.04)
   prevBeat = audio.beat
-})
+}
 
 function onMouseMove(e: MouseEvent) {
   state.mouse.x = e.clientX / window.innerWidth
@@ -282,7 +282,7 @@ onBeforeUnmount(() => {
         <TresPlaneGeometry :args="[2, 2]" />
         <primitive v-if="materialRef" :object="materialRef" />
       </TresMesh>
-      <RenderLoop />
+      <RenderLoop :on-frame="renderLoop" />
     </TresCanvas>
   </div>
 </template>

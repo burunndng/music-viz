@@ -1,19 +1,28 @@
 <script setup lang="ts">
 /**
- * RenderLoop — lives INSIDE <TresCanvas> so useLoop() has access to TresContext.
- * Receives the render callback via provide/inject.
+ * RenderLoop — must be a child of <TresCanvas>.
+ * TresCanvas provides its context in onMounted, so we defer useLoop
+ * with nextTick to ensure the context exists.
  */
-import { inject } from 'vue'
+import { nextTick, onMounted } from 'vue'
 import { useLoop } from '@tresjs/core'
 
-const onFrame = inject<(ctx: { delta: number }) => void>('renderLoop')
-const { onBeforeRender } = useLoop()
+const props = defineProps<{
+  onFrame: (ctx: { delta: number }) => void
+}>()
 
-onBeforeRender((ctx) => {
-  onFrame?.(ctx)
+onMounted(async () => {
+  // Wait for TresCanvas to finish its own onMounted (which provides the context)
+  await nextTick()
+  await nextTick()
+  const { onBeforeRender } = useLoop()
+  onBeforeRender((ctx) => {
+    props.onFrame(ctx)
+  })
 })
 </script>
 
 <template>
-  <primitive />
+  <!-- TresGroup is a no-op Three.js group — keeps this component in the Tres tree -->
+  <TresGroup />
 </template>
