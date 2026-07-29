@@ -10,7 +10,8 @@ import SliderControl from './SliderControl.vue'
 const fileInput = ref<HTMLInputElement>()
 const trackName = ref('')
 const minimized = ref(false)
-const sheet = ref<'none' | 'mode' | 'palette' | 'more'>('none')
+const sheet = ref<'none' | 'mode' | 'more'>('none')
+const paletteOpen = ref(false)
 const moreTab = ref<'mix' | 'rites' | 'presets' | 'vessel'>('mix')
 const recording = ref(false)
 
@@ -75,7 +76,14 @@ function chipSmCls(on: boolean) {
 }
 
 function close() { sheet.value = 'none' }
-function open(s: typeof sheet.value) { sheet.value = sheet.value === s ? 'none' : s }
+function open(s: 'mode' | 'more') {
+  paletteOpen.value = false
+  sheet.value = sheet.value === s ? 'none' : s
+}
+function togglePalette() {
+  sheet.value = 'none'
+  paletteOpen.value = !paletteOpen.value
+}
 
 async function toggleMic() {
   if (isMic.value) {
@@ -102,7 +110,7 @@ function stopAudio() {
   audioEngine.stop(); trackName.value = ''; state.audioOn = false; state.trackPlaying = false
 }
 function setMode(i: number) { state.mode = i; close() }
-function setPalette(i: number) { state.palette = i; close() }
+function setPalette(i: number) { state.palette = i; paletteOpen.value = false }
 function applyP(i: number) { animateToPreset(presets[i].params) }
 function applyS(i: number) { applySubstance(SUBSTANCES[i]); moreTab.value = 'mix' }
 function onRec() {
@@ -144,6 +152,7 @@ function onKey(e: KeyboardEvent) {
   else if (k === 'arrowright') cycleMode(1)
   else if (k === 'escape') {
     if (sheet.value !== 'none') close()
+    else if (paletteOpen.value) paletteOpen.value = false
     else minimized.value = !minimized.value
   }
 }
@@ -181,9 +190,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   </div>
 
   <div
-    v-if="sheet !== 'none' && !minimized"
+    v-if="(sheet !== 'none' || paletteOpen) && !minimized"
     class="fixed inset-0 z-[60] bg-black/45 backdrop-blur-[2px]"
-    @click="close"
+    @click="sheet = 'none'; paletteOpen = false"
   />
 
   <!-- DOCK -->
@@ -209,55 +218,30 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <div
           v-if="sheet === 'mode'"
           key="mode"
-          class="mb-2 max-h-[55vh] overflow-y-auto rounded-2xl sm:rounded-3xl bg-black/82 backdrop-blur-2xl border border-white/10 p-3 sm:p-4"
+          class="mb-2 max-h-[58vh] overflow-y-auto rounded-2xl sm:rounded-3xl bg-[#0a0a0e]/95 border border-white/10 p-5 sm:p-6 shadow-2xl"
           @click.stop
         >
-          <div class="flex items-center justify-between mb-2 px-0.5">
-            <span class="text-[9px] tracking-[0.22em] uppercase text-white/40">Modes · {{ MODES.length }}</span>
-            <button @click="close" class="text-white/40 hover:text-white/80 text-xs w-7 h-7">✕</button>
+          <div class="flex items-center justify-between mb-3 px-0.5">
+            <span class="text-[10px] tracking-[0.22em] uppercase text-white/50 font-medium">Modes · {{ MODES.length }}</span>
+            <button @click="close" class="text-white/50 hover:text-white/90 text-sm w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] transition-all">✕</button>
           </div>
-          <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
             <button
               v-for="(m, i) in MODES" :key="m.id"
               @click="setMode(i)"
               :class="[
-                'text-left p-2.5 rounded-xl border transition-all active:scale-[0.98]',
+                'text-left p-3.5 rounded-xl border transition-all active:scale-[0.98]',
                 i === state.mode
                   ? 'bg-gradient-to-br from-fuchsia-500/30 to-violet-500/15 border-fuchsia-400/45'
-                  : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.07]',
+                  : 'bg-white/[0.04] border-white/[0.08] hover:bg-white/[0.08]',
               ]"
             >
               <div class="flex items-baseline gap-1.5">
-                <span class="text-[8px] font-mono text-white/30">{{ String(i).padStart(2,'0') }}</span>
-                <span :class="['text-[11px] font-semibold tracking-wide leading-tight', i===state.mode ? 'text-fuchsia-100' : 'text-white/85']">{{ m.name }}</span>
+                <span class="text-[9px] font-mono text-white/40">{{ String(i).padStart(2,'0') }}</span>
+                <span :class="['text-[13px] font-semibold tracking-wide leading-tight', i===state.mode ? 'text-fuchsia-100' : 'text-white/90']">{{ m.name }}</span>
               </div>
-              <div class="text-[8px] text-white/35 mt-0.5 leading-snug line-clamp-2">{{ m.sub }}</div>
+              <div class="text-[10px] text-white/45 mt-1 leading-snug line-clamp-2">{{ m.sub }}</div>
             </button>
-          </div>
-        </div>
-
-        <!-- PALETTE -->
-        <div
-          v-else-if="sheet === 'palette'"
-          key="palette"
-          class="mb-2 rounded-2xl sm:rounded-3xl bg-black/82 backdrop-blur-2xl border border-white/10 p-3 sm:p-4"
-          @click.stop
-        >
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-[9px] tracking-[0.22em] uppercase text-white/40">Palette · OKLab</span>
-            <button @click="close" class="text-white/40 hover:text-white/80 text-xs w-7 h-7">✕</button>
-          </div>
-          <div class="grid grid-cols-3 gap-1.5">
-            <button
-              v-for="(p, i) in PALETTES" :key="p"
-              @click="setPalette(i)"
-              :class="[
-                'px-2 py-2.5 rounded-xl text-[10px] tracking-[0.08em] uppercase transition-all border',
-                i === state.palette
-                  ? 'bg-fuchsia-500/25 text-fuchsia-100 border-fuchsia-400/35'
-                  : 'bg-white/[0.03] text-white/55 border-white/[0.06] hover:bg-white/[0.08]',
-              ]"
-            >{{ p }}</button>
           </div>
         </div>
 
@@ -265,26 +249,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <div
           v-else-if="sheet === 'more'"
           key="more"
-          class="mb-2 max-h-[60vh] overflow-y-auto rounded-2xl sm:rounded-3xl bg-black/82 backdrop-blur-2xl border border-white/10"
+          class="mb-2 max-h-[62vh] overflow-y-auto rounded-2xl sm:rounded-3xl bg-[#0a0a0e]/95 border border-white/10 shadow-2xl"
           @click.stop
         >
-          <div class="sticky top-0 z-10 flex gap-1 p-2 bg-black/70 backdrop-blur-md border-b border-white/[0.06]">
+          <div class="sticky top-0 z-10 flex gap-1.5 p-2 bg-[#0a0a0e]/95 backdrop-blur-md border-b border-white/[0.08]">
             <button
               v-for="t in (['mix','rites','presets','vessel'] as const)"
               :key="t"
               @click="moreTab = t"
               :class="[
-                'flex-1 py-2 rounded-lg text-[9px] tracking-[0.14em] uppercase border transition-all',
+                'flex-1 py-2.5 rounded-lg text-[10px] tracking-[0.14em] uppercase border transition-all',
                 moreTab === t
-                  ? 'bg-white/[0.12] border-white/20 text-white/90'
-                  : 'bg-white/[0.03] border-white/[0.06] text-white/40',
+                  ? 'bg-white/[0.14] border-white/25 text-white/95'
+                  : 'bg-white/[0.04] border-white/[0.08] text-white/55',
               ]"
             >{{ t }}</button>
-            <button @click="close" class="w-9 rounded-lg text-white/40 hover:text-white/80 border border-white/[0.06]">✕</button>
+            <button @click="close" class="w-10 rounded-lg text-white/55 hover:text-white/90 border border-white/[0.08] hover:bg-white/[0.1] transition-all">✕</button>
           </div>
 
-          <div class="p-3 sm:p-4">
-            <div v-if="moreTab === 'mix'" class="space-y-2.5">
+          <div class="p-5 sm:p-6">
+            <div v-if="moreTab === 'mix'" class="space-y-3.5">
               <SliderControl
                 v-for="s in mixSliders" :key="s.key"
                 :label="s.label"
@@ -292,17 +276,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 :min="s.min" :max="s.max" :step="s.step"
                 :accent="(s as any).accent"
               />
-              <div class="pt-1">
-                <div class="text-[9px] tracking-[0.18em] uppercase text-white/35 mb-1.5">Wallpaper lens</div>
-                <div class="flex flex-wrap gap-1">
+              <div class="pt-2">
+                <div class="text-[10px] tracking-[0.18em] uppercase text-white/45 mb-2 font-medium">Wallpaper lens</div>
+                <div class="flex flex-wrap gap-1.5">
                   <button
                     v-for="w in walls" :key="w.id"
                     @click="state.wall = w.id"
                     :class="[
-                      'px-2.5 py-1.5 rounded-lg text-[9px] tracking-wider uppercase border transition-all',
+                      'px-3 py-2 rounded-lg text-[10px] tracking-wider uppercase border transition-all',
                       state.wall === w.id
-                        ? 'bg-white/[0.14] border-white/25 text-white/90'
-                        : 'bg-white/[0.03] border-white/[0.06] text-white/40',
+                        ? 'bg-white/[0.16] border-white/30 text-white/95'
+                        : 'bg-white/[0.04] border-white/[0.08] text-white/55 hover:bg-white/[0.08]',
                     ]"
                   >{{ w.label }}</button>
                 </div>
@@ -310,73 +294,73 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <button
                 v-if="audioEngine.analysis.on"
                 @click="stopAudio"
-                class="w-full mt-1 py-2.5 rounded-xl text-[10px] tracking-[0.18em] uppercase bg-red-500/20 border border-red-400/40 text-red-300"
+                class="w-full mt-2 py-3 rounded-xl text-[11px] tracking-[0.18em] uppercase bg-red-500/20 border border-red-400/40 text-red-300"
               >Stop audio</button>
-              <div class="text-[8px] text-white/25 font-mono leading-relaxed pt-1">
+              <div class="text-[9px] text-white/35 font-mono leading-relaxed pt-2">
                 space cycle · A auto · K flick · M mic · V scope · C cine · R ray · F full · S snap · ↑↓ dose · esc hide
               </div>
             </div>
 
-            <div v-else-if="moreTab === 'rites'" class="grid grid-cols-2 gap-1.5">
+            <div v-else-if="moreTab === 'rites'" class="grid grid-cols-2 gap-2.5">
               <button
                 v-for="r in rites" :key="r.key"
                 @click="toggleRite(r.key)"
                 :class="[
-                  'text-left p-3 rounded-xl border transition-all active:scale-[0.98]',
+                  'text-left p-4 rounded-xl border transition-all active:scale-[0.98]',
                   (state as any)[r.key]
                     ? 'bg-gradient-to-br from-fuchsia-500/25 to-violet-500/10 border-fuchsia-400/40'
-                    : 'bg-white/[0.03] border-white/[0.06]',
+                    : 'bg-white/[0.04] border-white/[0.08]',
                 ]"
               >
-                <div :class="['text-[12px] font-semibold tracking-wide', (state as any)[r.key] ? 'text-fuchsia-100' : 'text-white/80']">{{ r.label }}</div>
-                <div class="text-[9px] text-white/35 mt-0.5">{{ r.tip }}</div>
+                <div :class="['text-[13px] font-semibold tracking-wide', (state as any)[r.key] ? 'text-fuchsia-100' : 'text-white/90']">{{ r.label }}</div>
+                <div class="text-[10px] text-white/45 mt-1">{{ r.tip }}</div>
               </button>
-              <div class="col-span-2 mt-1 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                <div class="text-[9px] tracking-[0.16em] uppercase text-white/40 mb-1">Drop flash</div>
-                <div class="text-[10px] text-white/55 leading-snug">
-                  build <span class="text-white/80 font-mono">{{ (audioEngine.analysis.build ?? 0).toFixed(2) }}</span>
-                  · drop <span class="text-white/80 font-mono">{{ (audioEngine.analysis.drop ?? 0).toFixed(2) }}</span>
+              <div class="col-span-2 mt-1 p-4 rounded-xl bg-white/[0.04] border border-white/[0.08]">
+                <div class="text-[10px] tracking-[0.16em] uppercase text-white/50 mb-1.5 font-medium">Drop flash</div>
+                <div class="text-[11px] text-white/65 leading-snug">
+                  build <span class="text-white/90 font-mono">{{ (audioEngine.analysis.build ?? 0).toFixed(2) }}</span>
+                  · drop <span class="text-white/90 font-mono">{{ (audioEngine.analysis.drop ?? 0).toFixed(2) }}</span>
                   · live composite lens
                 </div>
               </div>
             </div>
 
-            <div v-else-if="moreTab === 'presets'" class="grid grid-cols-1 gap-1">
+            <div v-else-if="moreTab === 'presets'" class="grid grid-cols-1 gap-2">
               <button
                 v-for="(p, i) in presets" :key="p.name"
                 @click="applyP(i)"
-                class="text-left px-3 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.07] active:scale-[0.99] transition-all"
+                class="text-left px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] active:scale-[0.99] transition-all"
               >
-                <div class="text-[12px] font-medium text-white/85">{{ p.name }}</div>
-                <div class="text-[9px] text-white/35 mt-0.5">
+                <div class="text-[13px] font-medium text-white/90">{{ p.name }}</div>
+                <div class="text-[10px] text-white/45 mt-0.5">
                   {{ MODES[p.params.mode as number]?.name }} · {{ PALETTES[p.params.palette as number] }}
                 </div>
               </button>
             </div>
 
-            <div v-else class="space-y-3">
-              <div class="grid grid-cols-3 gap-1.5">
-                <button @click="actions.snapshot()" class="py-2.5 rounded-xl text-[10px] tracking-[0.12em] uppercase bg-white/[0.05] border border-white/10 text-white/70 active:bg-white/[0.1]">Snap</button>
-                <button @click="onRec" :class="['py-2.5 rounded-xl text-[10px] tracking-[0.12em] uppercase border active:scale-[0.98]', recording ? 'bg-red-500/30 border-red-400/50 text-red-200' : 'bg-white/[0.05] border-white/10 text-white/70']">{{ recording ? 'Stop' : 'Rec' }}</button>
-                <button @click="onFs" class="py-2.5 rounded-xl text-[10px] tracking-[0.12em] uppercase bg-white/[0.05] border border-white/10 text-white/70">Full</button>
+            <div v-else class="space-y-4">
+              <div class="grid grid-cols-3 gap-2">
+                <button @click="actions.snapshot()" class="py-3 rounded-xl text-[11px] font-medium tracking-[0.12em] uppercase bg-white/[0.06] border border-white/12 text-white/80 hover:bg-white/[0.12]">Snap</button>
+                <button @click="onRec" :class="['py-3 rounded-xl text-[11px] font-medium tracking-[0.12em] uppercase border active:scale-[0.98]', recording ? 'bg-red-500/30 border-red-400/50 text-red-200' : 'bg-white/[0.06] border-white/12 text-white/80 hover:bg-white/[0.12]']">{{ recording ? 'Stop' : 'Rec' }}</button>
+                <button @click="onFs" class="py-3 rounded-xl text-[11px] font-medium tracking-[0.12em] uppercase bg-white/[0.06] border border-white/12 text-white/80 hover:bg-white/[0.12]">Full</button>
               </div>
-              <div class="text-[9px] tracking-[0.18em] uppercase text-white/35">Substance signature</div>
-              <div class="grid grid-cols-1 gap-1">
+              <div class="text-[10px] tracking-[0.18em] uppercase text-white/45 font-medium">Substance signature</div>
+              <div class="grid grid-cols-1 gap-2">
                 <button
                   v-for="(s, i) in SUBSTANCES" :key="s.name"
                   @click="applyS(i)"
                   :class="[
-                    'text-left px-3 py-2.5 rounded-xl border transition-all',
+                    'text-left px-4 py-3 rounded-xl border transition-all',
                     s.name === state.substance
                       ? 'bg-fuchsia-500/15 border-fuchsia-400/30'
-                      : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.07]',
+                      : 'bg-white/[0.04] border-white/[0.08] hover:bg-white/[0.08]',
                   ]"
                 >
-                  <div class="flex items-center gap-2">
+                  <div class="flex items-center gap-2.5">
                     <span class="text-base">{{ s.glyph }}</span>
                     <div>
-                      <div class="text-[12px] font-medium text-white/85">{{ s.name }}</div>
-                      <div class="text-[9px] text-white/35">{{ s.klass }} · {{ s.duration }}</div>
+                      <div class="text-[13px] font-medium text-white/90">{{ s.name }}</div>
+                      <div class="text-[10px] text-white/45 mt-0.5">{{ s.klass }} · {{ s.duration }}</div>
                     </div>
                   </div>
                 </button>
@@ -387,7 +371,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </Transition>
 
       <!-- glass bar -->
-      <div class="rounded-2xl sm:rounded-3xl bg-black/70 backdrop-blur-2xl border border-white/[0.09] overflow-hidden">
+      <div class="rounded-2xl sm:rounded-3xl bg-black/85 backdrop-blur-xl border border-white/[0.09] overflow-hidden shadow-2xl">
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1 px-3 pt-2.5 pb-1.5">
           <SliderControl
             v-for="s in coreSliders" :key="s.key"
@@ -423,9 +407,34 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <button @click="open('mode')" :class="chipCls(sheet==='mode')" class="min-w-0">
             <span class="truncate max-w-[4.5rem] sm:max-w-[7rem]">{{ modeShort }}</span>
           </button>
-          <button @click="open('palette')" :class="chipCls(sheet==='palette')">
-            <span class="truncate max-w-[3.5rem] sm:max-w-[6rem]">{{ PALETTES[state.palette] }}</span>
-          </button>
+          <div class="relative">
+            <button @click="togglePalette" :class="chipCls(paletteOpen)">
+              <span class="truncate max-w-[3.5rem] sm:max-w-[6rem]">{{ PALETTES[state.palette] }}</span>
+            </button>
+            <Transition name="popover">
+              <div
+                v-if="paletteOpen"
+                class="absolute bottom-[52px] right-0 w-60 p-3 rounded-2xl bg-[#0a0a0e]/95 border border-white/10 shadow-2xl"
+                @click.stop
+              >
+                <div class="flex items-center justify-between mb-2.5 px-0.5">
+                  <span class="text-[10px] tracking-[0.22em] uppercase text-white/50 font-medium">Palette · OKLab</span>
+                  <button @click="paletteOpen = false" class="text-white/50 hover:text-white/90 text-xs w-7 h-7 rounded-md bg-white/[0.06] hover:bg-white/[0.12] transition-all">✕</button>
+                </div>
+                <div class="grid grid-cols-3 gap-1.5">
+                  <button
+                    v-for="(p, i) in PALETTES" :key="p"
+                    @click="setPalette(i)"
+                    :class="[
+                      'px-1.5 py-2.5 rounded-lg text-[10px] font-medium tracking-wide uppercase transition-all border',
+                      i === state.palette ? 'bg-fuchsia-500/25 text-fuchsia-100 border-fuchsia-400/35'
+                        : 'bg-white/[0.04] text-white/65 border-white/[0.08] hover:bg-white/[0.08]',
+                    ]"
+                  >{{ p }}</button>
+                </div>
+              </div>
+            </Transition>
+          </div>
 
           <div class="hidden md:flex items-center gap-1 ml-0.5">
             <button
@@ -463,6 +472,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .sheet-enter-from, .sheet-leave-to {
   transform: translateY(18px);
+  opacity: 0;
+}
+.popover-enter-active, .popover-leave-active {
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease;
+}
+.popover-enter-from, .popover-leave-to {
+  transform: translateY(8px) scale(0.97);
   opacity: 0;
 }
 </style>
