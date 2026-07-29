@@ -78,6 +78,13 @@ uniform vec3 uImgPal[6];
 // Waveform texture (R=L/mono, G=R)
 uniform sampler2D uWaveform;
 
+// GPU simulation state (Gray-Scott / FHN / CA / particles). Black 2×2 when idle.
+uniform sampler2D uSimTex;
+uniform float uSimActive;
+
+// Fluid dye field (Navier–Stokes). Black 2×2 when idle.
+uniform sampler2D uFluidTex;
+
 mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 vec2 cdiv(vec2 a, vec2 b) { float d = dot(b, b) + 1e-9; return vec2(a.x * b.x + a.y * b.y, a.y * b.x - a.x * b.y) / d; }
 float hash21(vec2 p) { p = fract(p * vec2(123.34, 345.45)); p += dot(p, p + 34.345); return fract(p.x * p.y); }
@@ -167,16 +174,6 @@ vec2 warpToMouse(vec2 p) {
 }
 float cortX(float r) { return log(1.0 + (0.051 / 0.087) * r); }
 
-vec3 applyPostFX(vec3 col) {
-  col = hueShift(col, uHueShift + uTime * 0.0);
-  float flicker = uFlicker * 0.22 * (0.5 + 0.5 * sin(uTime * TAU * uFlickerHz));
-  col *= 1.0 + flicker;
-  float pulse = uPulse * (0.5 + 0.5 * sin(uTime * uPulseRate));
-  col *= 1.0 + pulse;
-  col = mix(col, vec3(0.0), uVoid);
-  // Tone mapping (cinematic contrast)
-  col = mix(col, aces(col), uCine);
-  col = aces(col);
-  return col;
-}
+// NOTE: the old applyPostFX() was moved to the pipeline composite pass
+// (src/lib/shaders/post.ts). Mode shaders now output linear HDR.
 `

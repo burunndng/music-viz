@@ -12,7 +12,6 @@ void main() {
   float ar = uAudioOn * uReactivity;
   vec3 col;
 ` + body + `
-  col = applyPostFX(col);
   gl_FragColor = vec4(col, 1.0);
 }`
 }
@@ -50,49 +49,33 @@ export const formConstants = {
   `),
 }
 
-/* ── 1: NEURAL FIELD (fallback — domain-warped fBm with symmetry) ── */
+/* ── 1: NEURAL FIELD (FitzHugh–Nagumo excitable media, live GPU sim) ── */
 export const neuralField = {
   vertex: fullscreenVert(),
   fragment: fragBody(`
-    vec2 p = warpToMouse(uv);
-    int oc = octaves();
-    vec2 q = vec2(
-      fbm(p + vec2(0.0, t * 0.12 + uBass * ar * 0.4), oc),
-      fbm(p + vec2(5.2, 1.3) - t * 0.10, oc)
-    );
-    vec2 b = vec2(
-      fbm(p + 4.0 * q + vec2(1.7, 9.2) + t * 0.15 + uMid * ar * 0.2, oc),
-      fbm(p + 4.0 * q + vec2(8.3, 2.8), oc)
-    );
-    float f = fbm(p + 4.0 * b, oc);
-    float stripe = sin(f * 18.0 + t * 0.8 + uBass * ar * 3.0);
-    float spot = smoothstep(0.1, 0.3, abs(f - 0.5));
-    col = PAL(fract(f + 0.18 * length(b) - 0.04 * t + uTreble * ar * 0.2), uPalette);
-    col *= 0.35 + 0.85 * spot;
-    col += PAL(fract(0.5 + stripe * 0.3), uPalette) * 0.15 * ar;
-    col += col * uBeat * ar * 0.35;
+    vec2 suv = fract(uv * 0.6 + 0.5);
+    vec2 st = texture2D(uSimTex, suv).rg;
+    float u = st.x, v = st.y;
+    float act = smoothstep(0.0, 0.45, abs(u));
+    float wave = 0.5 + 0.5 * sin(u * 6.0 + t * 0.5);
+    col = PAL(fract(u * 0.5 + 0.1 * t + uCentroid * 0.3), uPalette) * (0.3 + 1.1 * act);
+    col += PAL(fract(0.5 + u * 0.2), uPalette) * pow(act, 3.0) * 0.6;
+    col *= 1.0 + uBeat * ar * 0.5;
   `),
 }
 
-/* ── 2: TURING FLUX (fallback — noise-based pattern) ── */
+/* ── 2: TURING FLUX (Gray–Scott reaction–diffusion, live GPU sim) ── */
 export const turingFlux = {
   vertex: fullscreenVert(),
   fragment: fragBody(`
-    vec2 p = warpToMouse(uv);
-    float scale = mix(2.0, 6.0, uComplexity);
-    vec2 g = p * scale;
-    float v = 0.0;
-    for (int i = 0; i < 3; i++) {
-      float fi = float(i);
-      vec2 q = g + vec2(sin(t * 0.3 + fi * 2.1), cos(t * 0.25 + fi * 1.7));
-      v += sin(q.x * 3.0 + t) * cos(q.y * 3.0 - t * 0.7 + uBass * ar * 2.0) * 0.33;
-    }
-    float stripes = sin(v * 8.0 + t * 1.5 + uMid * ar * 3.0);
-    float spots = smoothstep(0.05, 0.15, abs(fract(v * 2.0 + t * 0.3) - 0.5));
-    col = PAL(fract(v + 0.1 * t + uCentroid * 0.3), uPalette);
-    col *= 0.25 + 0.8 * spots;
-    col += PAL(fract(0.5 + stripes * 0.3), uPalette) * 0.12 * ar;
-    col += col * uBeat * ar * 0.3;
+    vec2 suv = fract(uv * 0.6 + 0.5);
+    vec2 gs = texture2D(uSimTex, suv).rg;
+    float g = gs.y, r = gs.x;
+    float pat = smoothstep(0.18, 0.5, g);
+    float blob = smoothstep(0.6, 0.0, r);
+    col = PAL(fract(g * 0.8 + 0.1 * t + uCentroid * 0.3), uPalette) * (0.2 + 1.3 * pat);
+    col += PAL(fract(0.5 + g), uPalette) * blob * 0.5;
+    col *= 1.0 + uBeat * ar * 0.4;
   `),
 }
 
@@ -341,7 +324,6 @@ void main() {
   }
   col += PAL(fract(0.6 + glow * 0.8), uPalette) * min(glow, 1.2) * 0.45;
   col *= 0.9 + uLevel * ar * 0.4;
-  col = applyPostFX(col);
   fragColor = vec4(col, 1.0);
 }
 `,
@@ -434,10 +416,12 @@ export const phasorVines = {
   `),
 }
 
-/* ── 14: DRAGONSCALES (fallback — hexagonal pattern without live CA) ── */
+/* ── 14: DRAGONSCALES (cyclic cellular automaton, live GPU sim) ── */
 export const dragonScales = {
   vertex: fullscreenVert(),
   fragment: fragBody(`
+    vec2 suv = fract(uv * 0.5 + 0.5);
+    float s = texture2D(uSimTex, suv).r;
     vec2 p = warpToMouse(uv);
     float scale = mix(4.0, 10.0, uComplexity);
     vec2 g = p * scale;
@@ -446,13 +430,10 @@ export const dragonScales = {
     vec2 local = dot(a, a) < dot(b, b) ? a : b;
     float d = length(local);
     float edge = smoothstep(0.52, 0.40, d);
-    float hex = smoothstep(0.0, 0.12, d);
-    float pat = sin(d * 14.0 - t * 2.0 + uBass * ar * 3.0);
-    float act = smoothstep(-0.2, 0.4, pat);
-    col = PAL(fract(pat * 0.3 + t * 0.04 + uCentroid * 0.3), uPalette) * (0.3 + 0.8 * act);
+    col = PAL(fract(s + t * 0.03 + uCentroid * 0.3), uPalette) * (0.25 + 0.9 * s);
     col *= edge;
-    col += PAL(fract(0.5 + 0.1 * t), uPalette) * pow(max(0.0, 1.0 - d * 2.5), 4.0) * 0.3;
-    col += col * uBeat * ar * 0.3;
+    col += PAL(fract(0.5 + s), uPalette) * pow(max(0.0, 1.0 - d * 2.5), 4.0) * 0.3;
+    col *= 1.0 + uBeat * ar * 0.3;
   `),
 }
 
@@ -477,24 +458,15 @@ export const waveform = {
   `),
 }
 
-/* ── 16: PARTICLE FLOW (fallback — animated noise field) ── */
+/* ── 16: PARTICLE FLOW (advected density field, live GPU sim) ── */
 export const particleFlow = {
   vertex: fullscreenVert(),
   fragment: fragBody(`
-    vec2 p = warpToMouse(uv);
-    int oc = octaves();
-    float acc = 0.0;
-    for (int i = 0; i < 40; i++) {
-      float fi = float(i);
-      vec2 q = p * (2.0 + fi * 0.05);
-      q += vec2(sin(t * 0.3 + fi * 0.7), cos(t * 0.25 + fi * 0.5)) * 0.3;
-      float v = vnoise(q + t * 0.1);
-      acc += v / (1.0 + fi * 0.15);
-    }
-    acc /= 3.0;
-    float glow = acc * acc * 3.0;
-    col = PAL(fract(glow * 0.8 + t * 0.05 + uCentroid * 0.3), uPalette) * glow;
-    col += PAL(fract(0.6 + t * 0.02), uPalette) * glow * 0.3;
+    vec2 suv = fract(uv * 0.6 + 0.5);
+    float d = texture2D(uSimTex, suv).r;
+    float glow = d * d * 1.6;
+    col = PAL(fract(d * 0.4 + t * 0.05 + uCentroid * 0.3), uPalette) * glow;
+    col += PAL(fract(0.6 + t * 0.02), uPalette) * glow * 0.4;
     col *= 1.0 + uBeat * ar * 0.5;
   `),
 }
@@ -543,7 +515,6 @@ void main() {
   float bloom = smoothstep(8.0, 42.0, mag) * (0.6 + 0.9 * uBeat * ar + 0.7 * uBeatPulse);
   col += PAL(fract(0.6), uPalette) * bloom * 0.6 + vec3(bloom * bloom * 0.5);
   col = max(col, 0.0);
-  col = applyPostFX(col);
   fragColor = vec4(col, 1.0);
 }
 `,
@@ -612,7 +583,6 @@ void main() {
   col += PAL(fract(0.72), uPalette) * crit * (0.7 + 1.4 * uBands1.y) * 0.9;
   col *= smoothstep(1.0, 0.90, R / 0.985);
   col = max(col, 0.0);
-  col = applyPostFX(col);
   fragColor = vec4(col, 1.0);
 }
 `,
@@ -686,7 +656,6 @@ void main() {
   if (!escaped) col += PAL(fract(0.6 + uCentroid * 0.3), uPalette) * (0.9 + 0.6 * uBeat * ar);
   col *= 1.0 / (1.0 + dot(p, p) * 0.18);
   col = max(col, 0.0);
-  col = applyPostFX(col);
   fragColor = vec4(col, 1.0);
 }
 `,
@@ -741,7 +710,6 @@ void main() {
        * (0.5 + 0.5 * sin(W * 38.0 + t));
   col *= 0.85 + 0.15 * smoothstep(0.0, 0.6, length(p));
   col = max(col, 0.0);
-  col = applyPostFX(col);
   fragColor = vec4(col, 1.0);
 }
 `,
@@ -788,7 +756,6 @@ void main() {
   float halo = 0.5 + 0.5 * sin(length(g) * mix(2.0, 6.0, uComplexity) - t * 1.5);
   col += PAL(fract(0.55 - 0.02 * t), uPalette) * halo * halo * 0.06;
   col = max(col, 0.0);
-  col = applyPostFX(col);
   fragColor = vec4(col, 1.0);
 }
 `,
@@ -987,7 +954,6 @@ void main() {
   col += coreCol * clamp(zeroGlow * 0.05, 0.0, 6.0) * (0.7 + 0.9 * uFlux * ar);
   col = hueShift(col, uFlux * 0.6 * rings * ar);
   col = max(col, 0.0);
-  col = applyPostFX(col);
   fragColor = vec4(col, 1.0);
 }
 `,
@@ -1027,10 +993,60 @@ export const vortexField = {
 }
 
 /* ── Mode shader array — index matches store.ts MODES order ── */
+/* ── 29: FLUID (stable-fluids dye advected through a Navier–Stokes field) ── */
+export const fluid = {
+  vertex: fullscreenVert(),
+  fragment: fragBody(`
+    vec2 suv = fract(uv * 0.5 + 0.5);
+    vec3 d = texture2D(uFluidTex, suv).rgb;
+    col = d * (0.8 + uBeat * ar * 0.5);
+    col = pow(max(col, 0.0), vec3(0.85));
+    col += col * uLevel * ar * 0.4;
+  `),
+}
+
+/* ── 30: NEBULA (volumetric raymarched dust + stars) ── */
+export const nebula = {
+  vertex: fullscreenVert(),
+  fragment: fragBody(`
+    vec2 p = warpToMouse(uv);
+    float r = length(p);
+    vec3 ro = vec3(0.0, 0.0, -3.0);
+    vec3 rd = normalize(vec3(p * 1.2, 1.0));
+    vec3 c = vec3(0.0);
+    float td = 0.0;
+    int oc = octaves();
+    for (int i = 0; i < 24; i++) {
+      vec3 pos = ro + rd * td;
+      float n = fbm(pos.xy * 1.5 + vec2(t * 0.05, t * 0.03) + pos.z * 0.5, oc);
+      float dens = smoothstep(0.45, 0.9, n) * exp(-td * 0.22);
+      vec3 cc = PAL(fract(n + t * 0.03 + uCentroid * 0.3), uPalette);
+      c += cc * dens * 0.5;
+      td += 0.18;
+    }
+    c *= 1.0 + uBass * ar * 0.6;
+    vec2 sg = floor(uv * vec2(220.0, 220.0));
+    float star = step(0.9975, hash21(sg));
+    c += vec3(star) * (0.5 + 0.5 * sin(t * 3.0 + hash21(sg) * 30.0)) * (0.6 + uLevel * ar);
+    col = c * smoothstep(1.2, 0.1, r);
+  `),
+}
+
+/* ── 31: SPECTROGRAPH (live scrolling spectrum-history sim) ── */
+export const spectrograph = {
+  vertex: fullscreenVert(),
+  fragment: fragBody(`
+    vec2 suv = vec2(fract(uv.x * 0.5 + 0.5), uv.y * 0.5 + 0.5);
+    float v = texture2D(uSimTex, suv).r;
+    col = PAL(fract(v * 1.2 + t * 0.02 + uCentroid * 0.3), uPalette) * pow(v, 0.7) * 1.6;
+    col += PAL(fract(0.6), uPalette) * smoothstep(0.85, 1.0, v) * 0.3;
+  `),
+}
+
 export const modeShaders = [
   formConstants,       // 0: FORM CONSTANTS
-  neuralField,         // 1: NEURAL FIELD (fallback)
-  turingFlux,          // 2: TURING FLUX (fallback)
+  neuralField,         // 1: NEURAL FIELD (live FHN sim)
+  turingFlux,          // 2: TURING FLUX (live Gray–Scott sim)
   sacredGeometry,      // 3: SACRED GEOMETRY
   breathingWalls,      // 4: BREATHING WALLS
   hyperspace,          // 5: HYPERSPACE (2D)
@@ -1041,10 +1057,10 @@ export const modeShaders = [
   imageWarp,           // 10: IMAGE WARP
   voronoi,             // 11: CELLULAR
   phasorVines,         // 12: VINES
-  dragonScales,        // 13: DRAGONSCALES (fallback)
+  dragonScales,        // 13: DRAGONSCALES (live CA sim)
   waveform,            // 14: WAVEFORM
   fractal,             // 15: FRACTAL (defined below)
-  particleFlow,        // 16: PARTICLE FLOW (fallback)
+  particleFlow,        // 16: PARTICLE FLOW (live advection sim)
   weierWells,          // 17: WEIER WELLS
   blaschkeRosette,     // 18: BLASCHKE
   indrasNecklace,      // 19: INDRA
@@ -1057,5 +1073,8 @@ export const modeShaders = [
   waveCrystal,         // 26: WAVE CRYSTAL
   phasePortal,         // 27: PHASE PORTAL
   vortexField,         // 28: VORTEX FIELD
+  fluid,               // 29: FLUID (live Navier–Stokes sim)
+  nebula,              // 30: NEBULA (volumetric raymarch)
+  spectrograph,        // 31: SPECTROGRAPH (live spectrum-history sim)
 ]
 

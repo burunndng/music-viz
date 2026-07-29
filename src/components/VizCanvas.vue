@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { onMounted, onBeforeUnmount, watch } from 'vue'
 import { TresCanvas } from '@tresjs/core'
-import { state, animated } from '../lib/store'
+import type { TresContext, TresContextWithClock } from '@tresjs/core'
+import { state, animated, actions, animateParam } from '../lib/store'
 import { audioEngine } from '../lib/audio'
 import { modeShaders } from '../lib/shaders/modes'
+import { VizPipeline } from '../lib/gl/pipeline'
+import { VizSims, type SimType, type SimAudio } from '../lib/gl/sims'
+import { VizFluid } from '../lib/gl/fluid'
 import * as THREE from 'three'
-
-const materialRef = ref<THREE.ShaderMaterial>()
 
 /* ── Waveform DataTexture (256×1, R=wave mapped 0..1) ── */
 const waveTexData = new Uint8Array(256 * 4)
@@ -22,6 +24,16 @@ specTexture.needsUpdate = true
 const imgTexData = new Uint8Array(2 * 2 * 4)
 const imgTexture = new THREE.DataTexture(imgTexData, 2, 2, THREE.RGBAFormat)
 imgTexture.needsUpdate = true
+
+/* ── Idle sim texture (2×2 black) — used when no GPU sim is active ── */
+const simTexData = new Uint8Array(2 * 2 * 4)
+const blackSimTex = new THREE.DataTexture(simTexData, 2, 2, THREE.RGBAFormat)
+blackSimTex.needsUpdate = true
+
+/* ── Idle fluid texture (2×2 black) ── */
+const fluidTexData = new Uint8Array(2 * 2 * 4)
+const blackFluidTex = new THREE.DataTexture(fluidTexData, 2, 2, THREE.RGBAFormat)
+blackFluidTex.needsUpdate = true
 
 const uniforms = {
   uTime: { value: 0 },
@@ -82,6 +94,9 @@ const uniforms = {
     new THREE.Vector3(0.28, 0.18, 0.42),
   ]},
   uWaveform: { value: waveTexture },
+  uSimTex: { value: blackSimTex as THREE.Texture },
+  uSimActive: { value: 0 },
+  uFluidTex: { value: blackFluidTex as THREE.Texture },
 }
 
 const smooth = {
@@ -89,6 +104,31 @@ const smooth = {
   beat: 0, flux: 0, centroid: 0.5,
   sub: 0, lowmid: 0, highmid: 0, air: 0,
   dissonance: 0,
+}
+
+let renderer: THREE.WebGLRenderer | null = null
+let pipeline: VizPipeline | null = null
+let sims: VizSims | null = null
+let fluid: VizFluid | null = null
+let sceneMaterial: THREE.ShaderMaterial | null = null
+
+/* Phase 5 runtime: snapshots, recording, transitions, autopilot */
+let pendingSnapshot = false
+let mediaRecorder: MediaRecorder | null = null
+let recording = false
+let recChunks: BlobPart[] = []
+let transT = 0
+let transActive = false
+let transMode = 0
+let beatCount = 0
+
+/* mode index → which GPU sim drives it (null = no sim) */
+const SIM_FOR_MODE: Record<number, SimType> = {
+  1: 'neural',
+  2: 'turing',
+  13: 'dragons',
+  16: 'particles',
+  31: 'spectro',
 }
 
 function createMaterial(modeIndex: number) {
@@ -103,8 +143,13 @@ function createMaterial(modeIndex: number) {
 }
 
 watch(() => state.mode, () => {
-  if (materialRef.value) materialRef.value.dispose()
-  materialRef.value = createMaterial(state.mode)
+  const old = sceneMaterial
+  sceneMaterial = createMaterial(state.mode)
+  if (old) old.dispose()
+  transT = 0
+  transActive = true
+  transMode = (transMode + 1) % 3
+  uniforms.uTransMode.value = transMode
 })
 
 watch(() => state.palette, (v) => { uniforms.uPalette.value = v })
@@ -120,19 +165,98 @@ watch(() => state.cinematic, (v) => { uniforms.uCine.value = v ? 1.0 : 0.0 })
 watch(() => state.wall, (v) => { uniforms.uWall.value = v })
 watch(() => state.wallScale, (v) => { uniforms.uWallScale.value = v })
 
+/* ── Adaptive resolution: EMA of frame time, stepped render scale ── */
+const SCALE_STEPS = [1.0, 0.85, 0.7, 0.6, 0.5]
+let scaleIdx = 0
+let emaMs = 16.7
+let slowFrames = 0
+let fastFrames = 0
+
+function applySize() {
+  if (!renderer || !pipeline) return
+  const dpr = Math.min(window.devicePixelRatio || 1, 2)
+  const w = Math.max(2, Math.round(window.innerWidth * dpr))
+  const h = Math.max(2, Math.round(window.innerHeight * dpr))
+  pipeline.setSize(w, h, SCALE_STEPS[scaleIdx])
+  uniforms.uResolution.value.set(pipeline.sceneWidth, pipeline.sceneHeight)
+}
+
+function adaptResolution(deltaMs: number) {
+  emaMs = THREE.MathUtils.lerp(emaMs, deltaMs, 0.05)
+  if (emaMs > 19) {
+    if (++slowFrames > 45 && scaleIdx < SCALE_STEPS.length - 1) {
+      scaleIdx++
+      slowFrames = 0
+      fastFrames = 0
+      applySize()
+    }
+  } else slowFrames = 0
+  if (emaMs < 12) {
+    if (++fastFrames > 240 && scaleIdx > 0) {
+      scaleIdx--
+      fastFrames = 0
+      slowFrames = 0
+      applySize()
+    }
+  } else fastFrames = 0
+}
+
+/* ── TresCanvas lifecycle: manual render mode, single loop ── */
+function onReady(ctx: TresContext) {
+  renderer = ctx.renderer.instance as THREE.WebGLRenderer
+  pipeline = new VizPipeline(renderer, uniforms)
+  sims = new VizSims(renderer)
+  fluid = new VizFluid(renderer)
+  sceneMaterial = createMaterial(state.mode)
+  applySize()
+
+  actions.snapshot = () => { pendingSnapshot = true }
+  actions.toggleRecord = toggleRecord
+  actions.isRecording = () => recording
+  actions.initTab = () => {
+    audioEngine.initTab().then(() => { state.audioOn = true }).catch(() => {})
+  }
+}
+
+function toggleRecord() {
+  if (recording) {
+    mediaRecorder?.stop()
+    return
+  }
+  const canvas = renderer?.domElement
+  if (!canvas || typeof (canvas as HTMLCanvasElement).captureStream !== 'function') return
+  const stream = (canvas as HTMLCanvasElement).captureStream(30)
+  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+    ? 'video/webm;codecs=vp9'
+    : 'video/webm'
+  mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12_000_000 })
+  recChunks = []
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data) }
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recChunks, { type: 'video/webm' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `resonance-${Date.now()}.webm`
+    a.click()
+    URL.revokeObjectURL(url)
+    recording = false
+  }
+  mediaRecorder.start()
+  recording = true
+}
+
 let time = 0
 let prevBeat = 0
 let beatPulse = 0
 let beatPhase = 0
 let bloomT = 3.0
-let rafId = 0
-let lastT = 0
 
 const SMOOTH_RATE = 0.15
 
-function frame(t: number) {
-  const delta = lastT ? (t - lastT) / 1000 : 0.016
-  lastT = t
+function onLoop(ctx: TresContextWithClock) {
+  if (!renderer || !pipeline || !sceneMaterial) return
+  const delta = ctx.delta > 0 ? Math.min(ctx.delta, 0.1) : 0.016
 
   time += delta * state.speed
   const audio = audioEngine.analyse(state.reactivity)
@@ -215,7 +339,84 @@ function frame(t: number) {
   state.beatIntensity = Math.max(0, state.beatIntensity - 0.04)
   prevBeat = audio.beat
 
-  rafId = requestAnimationFrame(frame)
+  adaptResolution(delta * 1000)
+
+  // ── Transition progress + drop flash ──
+  if (transActive) {
+    transT += delta / 0.8
+    if (transT >= 1) { transT = 1; transActive = false }
+  }
+  uniforms.uTrans.value = transActive ? transT : 0
+  uniforms.uDrop.value = audio.drop
+
+  // ── Autopilot (state.journey): re-score the trip every 8 beats ──
+  if (state.journey && audio.beat > 0.8 && prevBeat < 0.8) {
+    beatCount++
+    if (beatCount % 8 === 0 && !transActive) {
+      const next = Math.floor(Math.random() * modeShaders.length)
+      if (next !== state.mode) state.mode = next
+      animateParam('complexity', 0.3 + Math.random() * 0.6)
+      animateParam('symmetry', 2 + Math.floor(Math.random() * 10))
+      animateParam('speed', 0.5 + Math.random() * 1.5)
+      state.palette = Math.floor(Math.random() * 9)
+    }
+  }
+
+  // GPU simulations: advance the active sim, feed its texture to the modes.
+  const simType = SIM_FOR_MODE[state.mode] ?? null
+  if (sims) {
+    const audioLike: SimAudio = {
+      time,
+      bass: smooth.bass,
+      mid: smooth.mid,
+      treble: smooth.treble,
+      level: smooth.level,
+      beat: smooth.beat,
+      flux: smooth.flux,
+      centroid: smooth.centroid,
+      reactivity: state.reactivity,
+      audioOn: audio.on ? 1 : 0,
+      mouseX: state.mouse.x,
+      mouseY: state.mouse.y,
+    }
+    const tex = sims.update(simType, audioLike, uniforms.uSpectrum.value as THREE.Texture)
+    uniforms.uSimTex.value = tex ?? blackSimTex
+    uniforms.uSimActive.value = simType ? 1 : 0
+  }
+
+  // Fluid solver — only stepped while its mode is active (saves GPU).
+  if (fluid) {
+    if (state.mode === 29) {
+      uniforms.uFluidTex.value = fluid.update({
+        time,
+        bass: smooth.bass,
+        mid: smooth.mid,
+        treble: smooth.treble,
+        level: smooth.level,
+        beat: smooth.beat,
+        flux: smooth.flux,
+        centroid: smooth.centroid,
+        reactivity: state.reactivity,
+        audioOn: audio.on ? 1 : 0,
+        mouseX: state.mouse.x,
+        mouseY: state.mouse.y,
+      })
+    } else {
+      uniforms.uFluidTex.value = blackFluidTex
+    }
+  }
+
+  pipeline.render(sceneMaterial)
+
+  // ── Snapshot (captured immediately after a fresh render) ──
+  if (pendingSnapshot && renderer) {
+    pendingSnapshot = false
+    const url = renderer.domElement.toDataURL('image/png')
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `resonance-${Date.now()}.png`
+    a.click()
+  }
 }
 
 function onMouseMove(e: MouseEvent) {
@@ -233,18 +434,19 @@ function onTouchMove(e: TouchEvent) {
 }
 
 function onResize() {
-  uniforms.uResolution.value.set(window.innerWidth, window.innerHeight)
+  applySize()
 }
 
 onMounted(() => {
-  materialRef.value = createMaterial(state.mode)
   window.addEventListener('resize', onResize)
-  rafId = requestAnimationFrame(frame)
 })
 
 onBeforeUnmount(() => {
-  cancelAnimationFrame(rafId)
   window.removeEventListener('resize', onResize)
+  if (sceneMaterial) sceneMaterial.dispose()
+  if (pipeline) pipeline.dispose()
+  if (sims) sims.dispose()
+  if (fluid) fluid.dispose()
 })
 </script>
 
@@ -255,15 +457,13 @@ onBeforeUnmount(() => {
     @touchmove.passive="onTouchMove"
   >
     <TresCanvas
+      render-mode="manual"
+      :dpr="[1, 2]"
       :alpha="false"
       :antialias="false"
-      :preserve-drawing-buffer="true"
       class="w-full h-full"
-    >
-      <TresMesh :frustum-culled="false">
-        <TresPlaneGeometry :args="[2, 2]" />
-        <primitive v-if="materialRef" :object="materialRef" />
-      </TresMesh>
-    </TresCanvas>
+      @ready="onReady"
+      @loop="onLoop"
+    />
   </div>
 </template>

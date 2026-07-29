@@ -69,6 +69,9 @@ export const MODES = [
   { id: 'wave',        name: 'WAVE CRYSTAL',        sub: 'sine-Gordon breather lattice' },
   { id: 'phase',       name: 'PHASE PORTAL',        sub: 'continued-fraction field' },
   { id: 'vortex',      name: 'VORTEX FIELD',        sub: 'Abrikosov vortex lattice' },
+  { id: 'fluid',        name: 'FLUID',               sub: 'Navier–Stokes · live sim' },
+  { id: 'nebula',       name: 'NEBULA',              sub: 'volumetric raymarch' },
+  { id: 'spectrograph', name: 'SPECTROGRAPH',        sub: 'live spectrum history' },
 ]
 
 export const PALETTES = [
@@ -277,3 +280,16 @@ export const presets: Preset[] = [
     params: { mode: 28, palette: 7, dose: 0.6, speed: 0.8, complexity: 0.5, symmetry: 6, trail: 0.5, cinematic: true },
   },
 ]
+
+/* ── Bridge for canvas-side actions (populated by VizCanvas at runtime) ── */
+export const actions: {
+  snapshot: () => void
+  toggleRecord: () => void
+  isRecording: () => boolean
+  initTab: () => void
+} = {
+  snapshot: () => {},
+  toggleRecord: () => {},
+  isRecording: () => false,
+  initTab: () => {},
+}

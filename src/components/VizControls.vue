@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { state, MODES, PALETTES, presets, SUBSTANCES, animateToPreset, applySubstance } from '../lib/store'
+import { state, MODES, PALETTES, presets, SUBSTANCES, animateToPreset, applySubstance, actions } from '../lib/store'
 import { audioEngine } from '../lib/audio'
 import SliderControl from './SliderControl.vue'
 
@@ -155,6 +155,42 @@ function pickSubstance(i: number) {
         <span v-if="trackName" class="text-[10px] text-white/30 font-mono truncate max-w-[120px]">
           {{ trackName }}
         </span>
+
+        <!-- Capture cluster -->
+        <button
+          @click="actions.snapshot()"
+          class="w-8 h-8 rounded-full flex items-center justify-center border bg-white/[0.04] border-white/10 text-white/40 hover:text-white/70 transition-all duration-300 shrink-0"
+          title="Snapshot (PNG)"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z" />
+            <circle cx="12" cy="13" r="3" />
+          </svg>
+        </button>
+
+        <button
+          @click="actions.toggleRecord()"
+          :class="[
+            'w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-300 shrink-0',
+            actions.isRecording()
+              ? 'bg-red-500/30 border-red-400/50 text-red-300'
+              : 'bg-white/[0.04] border-white/10 text-white/40 hover:text-white/70'
+          ]"
+          title="Record (WebM)"
+        >
+          <span class="block w-2.5 h-2.5 rounded-full bg-current" />
+        </button>
+
+        <button
+          @click="actions.initTab()"
+          class="w-8 h-8 rounded-full flex items-center justify-center border bg-white/[0.04] border-white/10 text-white/40 hover:text-white/70 transition-all duration-300 shrink-0"
+          title="Capture tab / system audio"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+          </svg>
+        </button>
 
         <!-- Core sliders -->
         <div class="flex-1 flex items-center gap-3 overflow-x-auto pl-1">
