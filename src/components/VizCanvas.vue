@@ -126,9 +126,9 @@ let beatCount = 0
 const SIM_FOR_MODE: Record<number, SimType> = {
   1: 'neural',
   2: 'turing',
-  13: 'dragons',
-  16: 'particles',
-  31: 'spectro',
+  12: 'dragons',
+  15: 'particles',
+  30: 'spectro',
 }
 
 function createMaterial(modeIndex: number) {
@@ -386,7 +386,7 @@ function onLoop(ctx: TresContextWithClock) {
 
   // Fluid solver — only stepped while its mode is active (saves GPU).
   if (fluid) {
-    if (state.mode === 29) {
+    if (state.mode === 28) {
       uniforms.uFluidTex.value = fluid.update({
         time,
         bass: smooth.bass,

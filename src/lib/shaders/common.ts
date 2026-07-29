@@ -87,6 +87,13 @@ uniform sampler2D uFluidTex;
 
 mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 vec2 cdiv(vec2 a, vec2 b) { float d = dot(b, b) + 1e-9; return vec2(a.x * b.x + a.y * b.y, a.y * b.x - a.x * b.y) / d; }
+vec2 cmul(vec2 a, vec2 b) { return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
+// GLSL ES 1.00 has no mat2 inverse()
+mat2 inv2(mat2 m) {
+  float d = m[0][0]*m[1][1] - m[0][1]*m[1][0];
+  float id = 1.0 / (d + 1e-9);
+  return mat2(m[1][1], -m[0][1], -m[1][0], m[0][0]) * id;
+}
 float hash21(vec2 p) { p = fract(p * vec2(123.34, 345.45)); p += dot(p, p + 34.345); return fract(p.x * p.y); }
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);

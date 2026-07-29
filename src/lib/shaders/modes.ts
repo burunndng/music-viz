@@ -131,48 +131,43 @@ export const breathingWalls = {
   `),
 }
 
-/* ── 5: HYPERSPACE (2D kaleidoscopic tunnel — fallback when uRay off) ── */
+/* ── 5: HYPERSPACE (2D kaleido + optional 3D raymarch when uRay > 0.5) ── */
 export const hyperspace = {
   vertex: fullscreenVert(),
   fragment: fragBody(`
     vec2 p = warpToMouse(uv);
-    float n = max(6.0, uSymmetry);
-    vec2 q = fold(p, n);
-    float r = length(p) + 0.08;
-    float a = atan(q.y, q.x);
-    float depth = 1.0 / r + t * 0.6;
-    int oc = octaves();
-    vec2 tp = vec2(a * 3.0, depth);
-    float pat = fbm(tp * 2.0, oc) + 0.5 * fbm(tp * 5.0 - t, oc)
-              + 0.5 * sin(depth * 6.0 + a * n);
-    col = PAL(fract(pat * 0.6 + depth * 0.08 - t * 0.1 + uBass * ar * 0.3), uPalette);
-    col *= 0.4 + 1.2 * smoothstep(0.0, 0.5, r);
-    col += PAL(fract(t * 0.2), uPalette) * exp(-r * 5.0) * 1.2;
-    col += col * uBeat * ar * 0.5;
-  `),
-}
-
-/* ── 6: HYPERSPACE 3D (raymarched tunnel — used when uRay on) ── */
-export const hyperspace3D = {
-  vertex: fullscreenVert(),
-  fragment: fragBody(`
-    vec2 p = warpToMouse(uv);
-    vec3 rd = normalize(vec3(p * 1.1, 1.5));
-    rd.xy = rot(t * 0.12) * rd.xy;
-    float N = max(5.0, uSymmetry);
-    vec3 acc = vec3(0.0);
-    float z = 0.4;
-    for (int i = 0; i < 40; i++) {
-      vec3 q = vec3(rd.xy * z, z + t * 2.2);
-      float a = atan(q.y, q.x), r = length(q.xy) + 1e-3;
-      a = mod(a, TAU / N); a = abs(a - PI / N);
-      float cell = sin(a * N * 1.5) * 0.5 + sin(r * 5.0 - q.z * 1.8) + sin(q.z * 2.0);
-      float dens = smoothstep(0.3, 1.0, 0.5 + 0.5 * cell) * exp(-r * 0.7);
-      acc += PAL(fract(q.z * 0.04 + 0.15 * cell + t * 0.05 + uBass * ar * 0.3), uPalette) * dens * 0.06;
-      z += 0.14;
+    if (uRay > 0.5) {
+      vec3 rd = normalize(vec3(p * 1.1, 1.5));
+      rd.xy = rot(t * 0.12) * rd.xy;
+      float N = max(5.0, uSymmetry);
+      vec3 acc = vec3(0.0);
+      float z = 0.4;
+      for (int i = 0; i < 40; i++) {
+        vec3 q = vec3(rd.xy * z, z + t * 2.2);
+        float a = atan(q.y, q.x), r = length(q.xy) + 1e-3;
+        a = mod(a, TAU / N); a = abs(a - PI / N);
+        float cell = sin(a * N * 1.5) * 0.5 + sin(r * 5.0 - q.z * 1.8) + sin(q.z * 2.0);
+        float dens = smoothstep(0.3, 1.0, 0.5 + 0.5 * cell) * exp(-r * 0.7);
+        acc += PAL(fract(q.z * 0.04 + 0.15 * cell + t * 0.05 + uBass * ar * 0.3), uPalette) * dens * 0.06;
+        z += 0.14;
+      }
+      col = acc * (1.0 / (1.0 + dot(p, p) * 0.25));
+      col *= 1.0 + uBeat * ar * 0.5;
+    } else {
+      float n = max(6.0, uSymmetry);
+      vec2 q = fold(p, n);
+      float r = length(p) + 0.08;
+      float a = atan(q.y, q.x);
+      float depth = 1.0 / r + t * 0.6;
+      int oc = octaves();
+      vec2 tp = vec2(a * 3.0, depth);
+      float pat = fbm(tp * 2.0, oc) + 0.5 * fbm(tp * 5.0 - t, oc)
+                + 0.5 * sin(depth * 6.0 + a * n);
+      col = PAL(fract(pat * 0.6 + depth * 0.08 - t * 0.1 + uBass * ar * 0.3), uPalette);
+      col *= 0.4 + 1.2 * smoothstep(0.0, 0.5, r);
+      col += PAL(fract(t * 0.2), uPalette) * exp(-r * 5.0) * 1.2;
+      col += col * uBeat * ar * 0.5;
     }
-    col = acc * (1.0 / (1.0 + dot(p, p) * 0.25));
-    col *= 1.0 + uBeat * ar * 0.5;
   `),
 }
 
@@ -287,7 +282,6 @@ float deMandelbox(vec3 p, float scale) {
 export const fractal = {
   vertex: fullscreenVert(),
   fragment: commonGLSL + `
-uniform vec2 uResolution; out vec4 fragColor;
 ${mandelboxDE}
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
@@ -324,28 +318,13 @@ void main() {
   }
   col += PAL(fract(0.6 + glow * 0.8), uPalette) * min(glow, 1.2) * 0.45;
   col *= 0.9 + uLevel * ar * 0.4;
-  fragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, 1.0);
 }
 `,
 }
 
 
-/* ── 11: IMAGE WARP (kaleidoscope + image texture) ── */
-export const imageWarp = {
-  vertex: fullscreenVert(),
-  fragment: fragBody(`
-    vec2 p = warpToMouse(uv);
-    vec2 q = fold(rot(t * 0.05) * p, max(2.0, uSymmetry));
-    q += uMid * ar * 0.12 * vec2(sin(q.y * 5.0 + t), cos(q.x * 5.0 + t));
-    vec2 imgUv = fract(q * mix(0.5, 1.2, uComplexity) + 0.5);
-    vec3 img = texture(uImage, imgUv).rgb;
-    float lum = dot(img, vec3(0.299, 0.587, 0.114));
-    img = mix(img, PAL(fract(lum + 0.1 * t), uPalette), 0.15 + 0.4 * uAsc);
-    col = img * (0.55 + 0.7 * lum);
-  `),
-}
-
-/* ── 12: VORONOI / CELLULAR ── */
+/* ── 11: VORONOI / CELLULAR ── */
 export const voronoi = {
   vertex: fullscreenVert(),
   fragment: fragBody(`
@@ -445,7 +424,7 @@ export const waveform = {
     q = rot(t * 0.03) * q;
     float r = length(q), a = atan(q.y, q.x);
     float s = abs(fract(a / TAU) * 2.0 - 1.0);
-    vec2 wv = texture(uWaveform, vec2(s, 0.5)).rg * 2.0 - 1.0;
+    vec2 wv = texture2D(uWaveform, vec2(s, 0.5)).rg * 2.0 - 1.0;
     float w = 0.011 + 0.6 / uResolution.y;
     float dL = abs(r - (0.98 + wv.x * 0.52));
     float dR = abs(r - (0.60 + wv.y * 0.30));
@@ -475,7 +454,6 @@ export const particleFlow = {
 export const weierWells = {
   vertex: fullscreenVert(),
   fragment: commonGLSL + `
-uniform vec2 uResolution; out vec4 fragColor;
 vec2 cmulC(vec2 a, vec2 b) { return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
@@ -490,7 +468,7 @@ void main() {
   imT = max(imT, 0.30);
   vec2 w2 = vec2(reT, imT);
   mat2 B = mat2(w1, w2);
-  vec2 mn = inverse(B) * z;
+  vec2 mn = inv2(B) * z;
   mn = floor(mn + 0.5);
   z -= B * mn;
   vec2 I = vec2(1.0, 0.0);
@@ -515,7 +493,7 @@ void main() {
   float bloom = smoothstep(8.0, 42.0, mag) * (0.6 + 0.9 * uBeat * ar + 0.7 * uBeatPulse);
   col += PAL(fract(0.6), uPalette) * bloom * 0.6 + vec3(bloom * bloom * 0.5);
   col = max(col, 0.0);
-  fragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, 1.0);
 }
 `,
 }
@@ -524,7 +502,6 @@ void main() {
 export const blaschkeRosette = {
   vertex: fullscreenVert(),
   fragment: commonGLSL + `
-uniform vec2 uResolution; out vec4 fragColor;
 vec2 cmul(vec2 a, vec2 b) { return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
 vec2 cmulConj(vec2 a, vec2 b) { return vec2(a.x*b.x + a.y*b.y, a.x*b.y - a.y*b.x); }
 void main() {
@@ -583,7 +560,7 @@ void main() {
   col += PAL(fract(0.72), uPalette) * crit * (0.7 + 1.4 * uBands1.y) * 0.9;
   col *= smoothstep(1.0, 0.90, R / 0.985);
   col = max(col, 0.0);
-  fragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, 1.0);
 }
 `,
 }
@@ -592,7 +569,6 @@ void main() {
 export const indrasNecklace = {
   vertex: fullscreenVert(),
   fragment: commonGLSL + `
-uniform vec2 uResolution; out vec4 fragColor;
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
   float t = uTime * uSpeed;
@@ -656,7 +632,7 @@ void main() {
   if (!escaped) col += PAL(fract(0.6 + uCentroid * 0.3), uPalette) * (0.9 + 0.6 * uBeat * ar);
   col *= 1.0 / (1.0 + dot(p, p) * 0.18);
   col = max(col, 0.0);
-  fragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, 1.0);
 }
 `,
 }
@@ -666,7 +642,6 @@ void main() {
 export const arnoldTongues = {
   vertex: fullscreenVert(),
   fragment: commonGLSL + `
-uniform vec2 uResolution; out vec4 fragColor;
 float arnoldWind(float Omega, float K, float seed, int N) {
   float th = seed;
   for (int n = 0; n < 20; n++) { th += Omega - (K / TAU) * sin(TAU * th); }
@@ -710,7 +685,7 @@ void main() {
        * (0.5 + 0.5 * sin(W * 38.0 + t));
   col *= 0.85 + 0.15 * smoothstep(0.0, 0.6, length(p));
   col = max(col, 0.0);
-  fragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, 1.0);
 }
 `,
 }
@@ -719,7 +694,6 @@ void main() {
 export const gaussianHalo = {
   vertex: fullscreenVert(),
   fragment: commonGLSL + `
-uniform vec2 uResolution; out vec4 fragColor;
 bool isPrimeI(int n) {
   if (n < 2) return false; if (n == 2) return true;
   if ((n % 2) == 0) return false;
@@ -756,7 +730,7 @@ void main() {
   float halo = 0.5 + 0.5 * sin(length(g) * mix(2.0, 6.0, uComplexity) - t * 1.5);
   col += PAL(fract(0.55 - 0.02 * t), uPalette) * halo * halo * 0.06;
   col = max(col, 0.0);
-  fragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, 1.0);
 }
 `,
 }
@@ -908,7 +882,6 @@ export const waveCrystal = {
 export const phasePortal = {
   vertex: fullscreenVert(),
   fragment: commonGLSL + `
-uniform vec2 uResolution; out vec4 fragColor;
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
   float t = uTime * uSpeed;
@@ -954,7 +927,7 @@ void main() {
   col += coreCol * clamp(zeroGlow * 0.05, 0.0, 6.0) * (0.7 + 0.9 * uFlux * ar);
   col = hueShift(col, uFlux * 0.6 * rings * ar);
   col = max(col, 0.0);
-  fragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, 1.0);
 }
 `,
 }
@@ -1044,37 +1017,36 @@ export const spectrograph = {
 }
 
 export const modeShaders = [
-  formConstants,       // 0: FORM CONSTANTS
-  neuralField,         // 1: NEURAL FIELD (live FHN sim)
-  turingFlux,          // 2: TURING FLUX (live Gray–Scott sim)
-  sacredGeometry,      // 3: SACRED GEOMETRY
-  breathingWalls,      // 4: BREATHING WALLS
-  hyperspace,          // 5: HYPERSPACE (2D)
-  hyperbolic,          // 6: HYPERBOLIC
-  entoptic,            // 7: ENTOPTIC
-  quasicrystal,        // 8: QUASICRYSTAL
-  cymatics,            // 9: CYMATICS
-  imageWarp,           // 10: IMAGE WARP
-  voronoi,             // 11: CELLULAR
-  phasorVines,         // 12: VINES
-  dragonScales,        // 13: DRAGONSCALES (live CA sim)
-  waveform,            // 14: WAVEFORM
-  fractal,             // 15: FRACTAL (defined below)
-  particleFlow,        // 16: PARTICLE FLOW (live advection sim)
-  weierWells,          // 17: WEIER WELLS
-  blaschkeRosette,     // 18: BLASCHKE
-  indrasNecklace,      // 19: INDRA
-  arnoldTongues,       // 20: ARNOLD
-  gaussianHalo,        // 21: GAUSSIAN HALO
-  defectGas,           // 22: DEFECT GAS
-  pentagridLoom,       // 23: PENTAGRID LOOM
-  atomicBeat,          // 24: ATOMIC BEAT
-  denomDescent,        // 25: DENOM DESCENT
-  waveCrystal,         // 26: WAVE CRYSTAL
-  phasePortal,         // 27: PHASE PORTAL
-  vortexField,         // 28: VORTEX FIELD
-  fluid,               // 29: FLUID (live Navier–Stokes sim)
-  nebula,              // 30: NEBULA (volumetric raymarch)
-  spectrograph,        // 31: SPECTROGRAPH (live spectrum-history sim)
+  formConstants,       // 0
+  neuralField,         // 1
+  turingFlux,          // 2
+  sacredGeometry,      // 3
+  breathingWalls,      // 4
+  hyperspace,          // 5 (2D / 3D via uRay)
+  hyperbolic,          // 6
+  entoptic,            // 7
+  quasicrystal,        // 8
+  cymatics,            // 9
+  voronoi,             // 10 CELLULAR
+  phasorVines,         // 11 VINES
+  dragonScales,        // 12
+  waveform,            // 13
+  fractal,             // 14
+  particleFlow,        // 15
+  weierWells,          // 16
+  blaschkeRosette,     // 17
+  indrasNecklace,      // 18
+  arnoldTongues,       // 19
+  gaussianHalo,        // 20
+  defectGas,           // 21
+  pentagridLoom,       // 22
+  atomicBeat,          // 23
+  denomDescent,        // 24
+  waveCrystal,         // 25
+  phasePortal,         // 26
+  vortexField,         // 27
+  fluid,               // 28
+  nebula,              // 29
+  spectrograph,        // 30
 ]
 
